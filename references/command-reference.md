@@ -115,7 +115,7 @@ gh release delete temp-upload --repo $GITHUB_USER/$GITHUB_REPO --yes
 
 ---
 
-## Whisper Transcription
+## Whisper Transcription & Silence Detection
 
 ### Extract audio from video
 
@@ -129,6 +129,48 @@ ffmpeg -y -i "$WORKDIR/a-roll-full.mp4" -vn -ar 16000 -ac 1 -c:a pcm_s16le "$WOR
 whisper-cli -m /path/to/models/whisper/ggml-base.en.bin \
   -f "$WORKDIR/work/a-roll-audio.wav" \
   --max-len 30
+```
+
+### Detect silence gaps in A-roll
+
+```bash
+ffmpeg -i "$WORKDIR/a-roll-full.mp4" -af "silencedetect=noise=-30dB:d=0.15" -f null - 2>&1 | grep "silence_"
+```
+
+### Build silence gap midpoint list (Python)
+
+```python
+import subprocess, re
+
+result = subprocess.run(
+    ["ffmpeg", "-i", "a-roll-full.mp4", "-af", "silencedetect=noise=-30dB:d=0.15", "-f", "null", "-"],
+    capture_output=True, text=True
+)
+
+silence_gaps = []
+starts = re.findall(r'silence_start: ([\d.]+)', result.stderr)
+ends = re.findall(r'silence_end: ([\d.]+)', result.stderr)
+
+for s, e in zip(starts, ends):
+    midpoint = (float(s) + float(e)) / 2
+    silence_gaps.append(midpoint)
+
+print(f"Found {len(silence_gaps)} silence gaps")
+```
+
+### Snap segment boundaries to silence gaps (Python)
+
+```python
+def snap_to_silence(target_time, silence_gaps, window=0.5):
+    """Find the nearest silence gap midpoint within +/- window seconds."""
+    best = None
+    best_dist = float('inf')
+    for gap in silence_gaps:
+        dist = abs(gap - target_time)
+        if dist <= window and dist < best_dist:
+            best = gap
+            best_dist = dist
+    return best if best is not None else target_time
 ```
 
 ---

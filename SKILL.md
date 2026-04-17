@@ -28,7 +28,7 @@ These apply to EVERY step of the pipeline. Do not deviate.
 | Audio codec | AAC 128kbps |
 | Video codec | H.264 (libx264), yuv420p, faststart |
 | Max Creatify audio chunk | 59 seconds (hard limit is 60s, never exceed 59s) |
-| Max A-roll segment duration | 4 seconds |
+| Max A-roll segment duration | 5 seconds |
 | Speed boost | User-specified (typically 20-25%) |
 
 ## Creative Guidelines
@@ -85,7 +85,7 @@ This makes the pipeline resumable if the session restarts. Always read `progress
 ```
 Audio → Split at silence gaps → Creatify Aurora → A-roll video
     → Human approves A-roll
-    → Segment A-roll into <=4s chunks
+    → Segment A-roll into <=5s chunks (cut at silence gaps)
     → For each segment: generate split-screen B-roll image (Gemini) → human approves
     → For each segment: generate B-roll video (Grok Imagine) → human approves
     → For each segment: create compound (A-roll overlay on B-roll) → human approves
@@ -141,21 +141,44 @@ ffmpeg -y -f concat -safe 0 -i concat.txt -c copy a-roll-full.mp4
 
 ### Step 4: Segment A-Roll
 
-Transcribe the approved A-roll to get precise word-level timing:
+This step uses BOTH whisper transcription AND silence detection to plan segment boundaries. Whisper tells you where the content breaks are. Silence detection tells you where to actually cut.
+
+#### 4a. Transcribe A-Roll
 
 ```bash
 ffmpeg -y -i a-roll-full.mp4 -vn -ar 16000 -ac 1 -c:a pcm_s16le a-roll-audio.wav
 whisper-cli -m models/whisper/ggml-base.en.bin -f a-roll-audio.wav --max-len 30
 ```
 
-Split into segments of **4 seconds or less** at natural phrase/sentence boundaries. Save as `segments.json`:
+#### 4b. Detect All Silence Gaps in A-Roll
+
+```bash
+ffmpeg -i a-roll-full.mp4 -af "silencedetect=noise=-30dB:d=0.15" -f null - 2>&1 | grep "silence_"
+```
+
+Build a list of all silence gap midpoints from the output.
+
+#### 4c. Plan Segments
+
+Using the whisper transcript, identify natural phrase/sentence boundaries that produce segments of **5 seconds or less**.
+
+For EACH planned boundary:
+1. Find the nearest silence gap midpoint within +/- 0.5 seconds of the whisper boundary
+2. If a silence gap exists within that window, snap the cut point to that silence midpoint
+3. If no silence gap exists within the window, use the whisper timestamp as fallback
+
+**Why this matters:** Whisper timestamps are approximate -- they estimate word boundaries but are not frame-perfect. Cutting at a whisper timestamp can land in the middle of a phoneme, producing a micro-clip at the segment boundary. Across 25+ segments concatenated together, these micro-clips create an unnatural choppy feel. Cutting at actual silence gaps eliminates this entirely.
+
+Save the final segment plan as `segments.json`:
 
 ```json
 [
-  {"seg": 1, "start": 0.00, "end": 4.16, "dur": 4.16, "script": "45 years at the emergency Johnson Clinic and they still"},
-  {"seg": 2, "start": 4.16, "end": 8.25, "dur": 4.09, "script": "don't believe me when I tell them..."}
+  {"seg": 1, "start": 0.00, "end": 4.16, "dur": 4.16, "script": "45 years at the emergency Johnson Clinic and they still", "cut_method": "silence_gap"},
+  {"seg": 2, "start": 4.16, "end": 8.25, "dur": 4.09, "script": "don't believe me when I tell them...", "cut_method": "silence_gap"}
 ]
 ```
+
+The `cut_method` field documents whether each boundary was snapped to a silence gap or used a whisper fallback.
 
 ### Step 5: Generate Split-Screen B-Roll Images (Gemini)
 
@@ -329,6 +352,7 @@ Final export MUST be: H.264 + yuv420p + AAC + faststart (QuickTime-safe).
 | Black avatar background | Used WebM alpha intermediate | Use PNG frames directly in overlay |
 | Lip sync drift | Used `-c copy` for segment extraction | Re-encode segments (libx264) |
 | Audio cut mid-word | Split at arbitrary time, not silence gap | Re-split at silence midpoint |
+| Choppy segment transitions | Segment boundaries at whisper timestamps, not silence gaps | Snap boundaries to nearest silence gap midpoint (+/- 0.5s) |
 
 ## File Organization
 

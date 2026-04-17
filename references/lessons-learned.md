@@ -8,6 +8,12 @@ Hard-won lessons from the first production run (2026-04-16).
 
 **Fix:** Use `ffmpeg silencedetect` to find silence gaps near the optimal split point. Split at the midpoint of the silence gap, not at a fixed time offset.
 
+## A-Roll Segment Boundaries: Whisper Timestamps vs Silence Gaps
+
+**Problem:** Whisper provides approximate word-level timestamps, but they are not frame-perfect. Cutting A-roll segments at whisper timestamps can land in the middle of a phoneme, producing micro-clips at segment boundaries. Across 25+ segments concatenated, these micro-clips create an unnatural choppy feel.
+
+**Fix:** Use whisper to identify rough content-based boundaries (<=5s segments at phrase breaks), then snap each boundary to the nearest actual silence gap midpoint (within +/- 0.5s window). Run `silencedetect` on the A-roll once to build a list of all silence gaps, then use a snap function to align each cut point. If no silence gap exists within the window, fall back to the whisper timestamp.
+
 ## A-Roll Segment Extraction: `-c copy` vs Re-encode
 
 **Problem:** Using `ffmpeg -ss $START -t $DUR -c copy` to extract segments cuts on keyframes, not at the exact requested timestamp. Each segment came out ~0.08-0.2s longer than planned. Over 28 segments, this compounded to +2.24 seconds of cumulative drift, causing severe audio/video lip sync desync.
