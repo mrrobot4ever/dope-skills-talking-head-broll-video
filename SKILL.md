@@ -13,6 +13,10 @@ Generate a complete talking-head B-roll video from an avatar image and audio fil
 2. **Avatar image** -- a photo of the person (JPG/PNG, portrait orientation preferred)
 3. **Optional: Product reference image** -- for segments that mention a specific product (include as inlineData in Gemini requests)
 
+**At the start of every run, ask the user:**
+- "Do you have a product reference image you'd like me to use for segments that mention the product?"
+- If yes, save it alongside the avatar image and use it in Gemini requests for product-related segments
+
 ## Global Constants
 
 These apply to EVERY step of the pipeline. Do not deviate.
@@ -59,6 +63,17 @@ If user has provided a product reference image, include it as `inlineData` in th
 ### Grok Video Prompt
 
 Always use: `"Gentle slow camera movement, subtle parallax effect, cinematic photorealistic"`
+
+**Note on Grok video duration:** Grok Imagine always generates 4-second clips regardless of the A-roll segment duration. This is expected. The duration mismatch is resolved in Step 7c (Retime B-Roll) where the 4-second clip is sped up or slowed down to match the A-roll segment's exact duration.
+
+### B-Roll Option Quality
+
+When generating 3 B-roll options for a segment, vary the visual approach:
+- **Option A:** Literal/direct interpretation of the script content
+- **Option B:** Metaphorical/conceptual interpretation (e.g., "aging backwards" → hourglass with sand flowing upward)
+- **Option C:** Product-focused or authority-focused interpretation
+
+Each option must be contextually relevant to the segment's script. Do NOT generate generic or repetitive options across segments. Review what was used in previous segments to avoid visual repetition.
 
 ## State Management
 
@@ -124,6 +139,8 @@ Upload audio chunks and avatar image to public URLs, then submit to Creatify Aur
 3. Poll every 30 seconds until all chunks report status "done"
 4. Download video output from each chunk
 5. Clean up temporary GitHub release
+
+**Temporary file hosting:** Files must be uploaded to a public URL for Creatify. Use GitHub Release assets on any public repo the user has access to. Ask the user which repo to use, or default to a known one. Always clean up temporary releases after A-roll generation is complete (`gh release delete <tag> --repo <user/repo> --yes`).
 
 See `references/command-reference.md` → "Creatify Aurora" for exact commands.
 
