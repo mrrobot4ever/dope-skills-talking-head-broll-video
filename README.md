@@ -17,9 +17,9 @@ Takes an audio file (your script) and an avatar image (your spokesperson), then 
 1. **Audio splitting** -- splits at silence gaps to stay under Creatify's 59s limit
 2. **A-roll generation** -- Creatify Aurora creates lip-synced avatar video
 3. **Segmentation** -- divides A-roll into <=4s segments at natural phrase boundaries
-4. **B-roll image generation** -- Gemini creates split-screen images for each segment
+4. **B-roll image generation** -- Gemini creates split-screen 9:16 images for each segment
 5. **B-roll video generation** -- Grok Imagine animates each image with cinematic camera movement
-6. **Compositing** -- removes avatar background (rembg), overlays on B-roll with synced audio
+6. **Compositing** -- removes avatar background (rembg), overlays transparent PNG frames on B-roll with synced audio
 7. **Final assembly** -- concatenates all segments, applies speed boost
 
 ## Requirements
@@ -36,16 +36,30 @@ See [references/setup.md](references/setup.md) for full installation instruction
 Copy the skill into your OpenClaw workspace:
 
 ```bash
-cp -r dope-skills-talking-head-broll-video ~/.openclaw/workspace/skills/
+cd ~/.openclaw/workspace/skills
+git clone https://github.com/mrrobot4ever/dope-skills-talking-head-broll-video.git
 ```
 
-Then tell your agent: "I want to create a talking head b-roll video" and provide an audio file and avatar image.
+Then tell your agent: *"I want to create a talking head b-roll video"* and provide an audio file and avatar image.
 
-The agent will read `SKILL.md` and follow the pipeline step by step, asking for your approval at each stage.
+The agent reads `SKILL.md` and follows the pipeline step by step, asking for your approval at each stage.
 
-## Lessons Learned
+## Documentation
 
-See [references/lessons-learned.md](references/lessons-learned.md) for every failure pattern encountered during development and the exact fixes.
+| File | Purpose |
+|------|---------|
+| [SKILL.md](SKILL.md) | Main pipeline playbook -- the agent reads this |
+| [references/setup.md](references/setup.md) | Installation, API keys, cost estimates |
+| [references/command-reference.md](references/command-reference.md) | Copy-paste command templates for every step |
+| [references/lessons-learned.md](references/lessons-learned.md) | Failure patterns and fixes from production |
+
+## Key Design Decisions
+
+- **Split-screen B-roll**: Every B-roll image is a 9:16 vertical split screen with two photos (top and bottom) separated by a thin white line
+- **Human-in-the-loop**: User approves at every major step -- A-roll, each B-roll image, each B-roll video, each compound segment, final video
+- **PNG transparency**: Avatar background removal uses PNG frame sequences, never WebM alpha (which flattens to black in MP4)
+- **Frame-accurate extraction**: A-roll segments are re-encoded (not stream-copied) to prevent cumulative audio/video drift
+- **State tracking**: Pipeline progress saved to `progress.json` for session resumability
 
 ## License
 
